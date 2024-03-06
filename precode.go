@@ -5,9 +5,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os/exec"
 
 	"github.com/go-chi/chi/v5"
 )
+
+type NetIP struct {
+	//CimClass              map[string]string `json:"CimClass"`
+	//CimInstanceProperties []string          `json:"CimInstanceProperties"`
+	//CimSystemProperties   map[string]string `json:"CimSystemProperties"`
+	InterfaceAlias string `json:"InterfaceAlias"`
+	IPv4Address    string `json:"IPv4Address"`
+}
+type Operation struct {
+	Op   string   `json:"op"`
+	Path []string `json:"path"`
+}
 
 // Task ...
 type Task struct {
@@ -39,6 +52,43 @@ var tasks = map[string]Task{
 			"Postman",
 		},
 	},
+}
+
+func getIPAddr(w http.ResponseWriter, r *http.Request) {
+	// сериализуем данные из слайса artists
+	netip := []NetIP{}
+	var op Operation
+	var c *exec.Cmd
+	var buf bytes.Buffer
+
+	_, err := buf.ReadFrom(r.Body)
+	fmt.Println(buf)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err = json.Unmarshal(buf.Bytes(), &op); err != nil {
+		fmt.Println(op)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	fmt.Println(op)
+	c = exec.Command("powershell", "/C", op.Path[0])
+	ipconfig, _ := c.CombinedOutput()
+	if err = json.Unmarshal(ipconfig, &netip); err != nil {
+		fmt.Println(netip)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	fmt.Println("NetIP Struct:", netip)
+	// в заголовок записываем тип контента, у нас это данные в формате JSON
+	w.Header().Set("Content-Type", "application/json")
+	// так как все успешно, то статус OK
+	w.WriteHeader(http.StatusOK)
+	// записываем сериализованные в JSON данные в тело ответа
+	resp, _ := json.Marshal(netip)
+	w.Write(resp)
 }
 
 // Ниже напишите обработчики для каждого эндпоинта
@@ -127,6 +177,7 @@ func main() {
 	r.Post("/tasks", postTask)
 	r.Get("/tasks/{id}", getTask)
 	r.Delete("/tasks/{id}", deleteTask)
+	r.Get("/ipAddr", getIPAddr)
 
 	if err := http.ListenAndServe(":8080", r); err != nil {
 		fmt.Printf("Ошибка при запуске сервера: %s", err.Error())
